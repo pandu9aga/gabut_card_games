@@ -48,5 +48,19 @@ class CardSeeder extends Seeder
         foreach ($cards as $card) {
             Card::create($card);
         }
+
+        // ===== STANDARD DECK (52 cards) for Remi 41 =====
+        $suits = ['spade', 'heart', 'club', 'diamond'];
+        $values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+
+        foreach ($suits as $suit) {
+            foreach ($values as $value) {
+                Card::create([
+                    'type' => 'standard',
+                    'color' => $suit,
+                    'value' => $value,
+                ]);
+            }
+        }
     }
 }

@@ -14,4 +14,5 @@ Route::post('/game/{code}/start', [GameController::class, 'start'])->name('game.
 Route::get('/game/{code}/state', [GameController::class, 'state'])->name('game.state');
 Route::post('/game/{code}/play', [GameController::class, 'playCards'])->name('game.play');
 Route::post('/game/{code}/draw', [GameController::class, 'drawCard'])->name('game.draw');
+Route::post('/game/{code}/discard', [GameController::class, 'discardCard'])->name('game.discard');
 Route::post('/game/{code}/uno', [GameController::class, 'sayUno'])->name('game.uno');

@@ -5,15 +5,18 @@ namespace App\Http\Controllers;
 use App\Models\Game;
 use App\Models\Player;
 use App\Services\GameEngine;
+use App\Services\RemiEngine;
 use Illuminate\Http\Request;
 
 class GameController extends Controller
 {
     protected GameEngine $engine;
+    protected RemiEngine $remiEngine;
 
-    public function __construct(GameEngine $engine)
+    public function __construct(GameEngine $engine, RemiEngine $remiEngine)
     {
         $this->engine = $engine;
+        $this->remiEngine = $remiEngine;
     }
 
     /**
@@ -31,10 +34,17 @@ class GameController extends Controller
     {
         $request->validate([
             'player_name' => 'required|string|max:50',
+            'game_type' => 'nullable|string|in:uno,remi',
         ]);
 
         $sessionId = $request->session()->getId();
-        $game = $this->engine->createGame($request->player_name, $sessionId);
+        $gameType = $request->game_type ?? 'uno';
+
+        if ($gameType === 'remi') {
+            $game = $this->remiEngine->createGame($request->player_name, $sessionId);
+        } else {
+            $game = $this->engine->createGame($request->player_name, $sessionId);
+        }
 
         return response()->json([
             'success' => true,
@@ -54,11 +64,19 @@ class GameController extends Controller
         ]);
 
         $sessionId = $request->session()->getId();
-        $result = $this->engine->joinGame(
-            strtoupper($request->code),
-            $request->player_name,
-            $sessionId
-        );
+        $code = strtoupper($request->code);
+
+        // Determine game type
+        $game = Game::where('code', $code)->first();
+        if (!$game) {
+            return response()->json(['error' => 'Game tidak ditemukan.'], 422);
+        }
+
+        if ($game->game_type === 'remi') {
+            $result = $this->remiEngine->joinGame($code, $request->player_name, $sessionId);
+        } else {
+            $result = $this->engine->joinGame($code, $request->player_name, $sessionId);
+        }
 
         if (isset($result['error'])) {
             return response()->json(['error' => $result['error']], 422);
@@ -84,6 +102,13 @@ class GameController extends Controller
             return redirect()->route('lobby')->with('error', 'Kamu belum tergabung di game ini.');
         }
 
+        if ($game->game_type === 'remi') {
+            return view('remi', [
+                'game' => $game,
+                'player' => $player,
+            ]);
+        }
+
         return view('game', [
             'game' => $game,
             'player' => $player,
@@ -107,7 +132,11 @@ class GameController extends Controller
             return response()->json(['error' => 'Minimal 2 pemain untuk mulai.'], 422);
         }
 
-        $this->engine->startGame($game);
+        if ($game->game_type === 'remi') {
+            $this->remiEngine->startGame($game);
+        } else {
+            $this->engine->startGame($game);
+        }
 
         return response()->json(['success' => true]);
     }
@@ -125,12 +154,17 @@ class GameController extends Controller
             return response()->json(['error' => 'Not in game'], 403);
         }
 
-        $state = $this->engine->getGameState($game, $player);
+        if ($game->game_type === 'remi') {
+            $state = $this->remiEngine->getGameState($game, $player);
+        } else {
+            $state = $this->engine->getGameState($game, $player);
+        }
+
         return response()->json($state);
     }
 
     /**
-     * Play one or more cards.
+     * Play one or more cards (UNO only).
      */
     public function playCards(Request $request, string $code)
     {
@@ -167,7 +201,7 @@ class GameController extends Controller
     }
 
     /**
-     * Draw a card.
+     * Draw a card (UNO: from deck, Remi: from deck or pile).
      */
     public function drawCard(Request $request, string $code)
     {
@@ -179,7 +213,42 @@ class GameController extends Controller
             return response()->json(['error' => 'Not in game'], 403);
         }
 
-        $result = $this->engine->drawCard($game, $player);
+        if ($game->game_type === 'remi') {
+            $source = $request->input('source', 'deck');
+            if ($source === 'pile') {
+                $result = $this->remiEngine->drawFromPile($game, $player);
+            } else {
+                $result = $this->remiEngine->drawFromDeck($game, $player);
+            }
+        } else {
+            $result = $this->engine->drawCard($game, $player);
+        }
+
+        if (isset($result['error'])) {
+            return response()->json($result, 422);
+        }
+
+        return response()->json($result);
+    }
+
+    /**
+     * Discard a card (Remi only).
+     */
+    public function discardCard(Request $request, string $code)
+    {
+        $game = Game::where('code', $code)->firstOrFail();
+        $sessionId = $request->session()->getId();
+        $player = $game->players()->where('session_id', $sessionId)->first();
+
+        if (!$player) {
+            return response()->json(['error' => 'Not in game'], 403);
+        }
+
+        $request->validate([
+            'card_id' => 'required|integer',
+        ]);
+
+        $result = $this->remiEngine->discardCard($game, $player, $request->card_id);
 
         if (isset($result['error'])) {
             return response()->json($result, 422);
