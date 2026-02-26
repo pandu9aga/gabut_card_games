@@ -24,6 +24,9 @@ class GameController extends Controller
      */
     public function index()
     {
+        // Lazy cleanup: delete games older than 6 hours
+        Game::where('created_at', '<', now()->subHours(6))->delete();
+
         return view('lobby');
     }
 
